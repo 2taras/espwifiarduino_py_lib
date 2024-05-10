@@ -1,5 +1,5 @@
 from threading import Lock, Thread
-import re
+import re, time
 
 from websockets.sync.client import connect
 
@@ -13,6 +13,7 @@ class ArduinoVars():
         self.ws = None
         self.uri = uri
         self.room = room
+        self.stop_worker = False
         self.worker = Thread(target=self._ws_worker)
         self.worker.start()
 
@@ -25,29 +26,55 @@ class ArduinoVars():
                 self.main_data[int(pack_id)][type_to_pos[s_type]] = data
 
     def _ws_worker(self):
-        with connect(self.uri) as ws:
-            self.ws = ws
-            ws.send(f"connect {self.room}")
-            for line in ws:
-                self._line_parser(line)
-        self.ws = None
+        while not self.stop_worker:
+            try:
+                with connect(self.uri, open_timeout=2, close_timeout=1) as ws:
+                    self.ws = ws
+                    ws.send(f"connect {self.room}")
+                    for line in ws:
+                        self._line_parser(line)
+                self.ws = None
+                time.sleep(0.1)
+            except:
+                time.sleep(0.5)
+
+    def stop(self):
+        while self.worker.is_alive():
+            self.stop_worker = True
+            if self.ws is not None: self.ws.close()
+        try:
+            self.data_mutex.release()
+        except:
+            pass
     
     def select_room(self, room):
-        if(self.ws != None):
-            self.ws.send(f"connect {room}")
+        try:
+            if(self.ws != None):
+                self.ws.send(f"connect {room}")
+        except:
+            pass
 
     def send_int(self, buf_id, val):
-        if(self.ws != None):
-            self.ws.send(f"ARD_PACK:{buf_id}:i:{val}")
+        try:
+            if(self.ws != None):
+                self.ws.send(f"ARD_PACK:{buf_id}:i:{val}")
+        except:
+            pass
 
     def send_float(self, buf_id, val):
-        if(self.ws != None):
-            self.ws.send(f"ARD_PACK:{buf_id}:f:{val}")
+        try:
+            if(self.ws != None):
+                self.ws.send(f"ARD_PACK:{buf_id}:f:{val}")
+        except:
+            pass
 
     def send_string(self, buf_id, val):
         if(len(val) > 8): raise ValueError("max str len 8")
-        if(self.ws != None):
-            self.ws.send(f"ARD_PACK:{buf_id}:c:{val}")
+        try:
+            if(self.ws != None):
+                self.ws.send(f"ARD_PACK:{buf_id}:c:{val}")
+        except:
+            pass
     
     def get_int(self, buf_id):
         with self.data_mutex:
